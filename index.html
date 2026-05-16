@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MTG LifeTap Multiplayer</title>
+
+<style>
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  font-family:Arial,sans-serif;
+}
+
+body{
+  background:#0f0f0f;
+  color:white;
+  min-height:100vh;
+  padding:6px;
+}
+
+button{
+  border:none;
+  background:#b30000;
+  color:white;
+  border-radius:8px;
+  padding:5px 8px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+input{
+  background:#1d1d1d;
+  color:white;
+  border:1px solid #444;
+  border-radius:8px;
+  padding:6px;
+}
+
+#lobbyScreen{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  gap:10px;
+}
+
+#app{
+  display:none;
+}
+
+h1{
+  text-align:center;
+  color:#ff3333;
+  margin-bottom:8px;
+}
+
+.topbar{
+  display:flex;
+  justify-content:center;
+  gap:6px;
+  margin-bottom:8px;
+  flex-wrap:wrap;
+}
+
+.player-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:8px;
+}
+
+.player-card{
+  background:#181818;
+  border:2px solid #700;
+  border-radius:12px;
+  overflow:hidden;
+  position:relative;
+}
+
+.player-card.dead::after{
+  content:"DEAD";
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:2rem;
+  background:rgba(0,0,0,.8);
+  color:red;
+  font-weight:bold;
+}
+
+.player-image{
+  width:100%;
+  aspect-ratio:63/88;
+  object-fit:cover;
+  display:block;
+}
+
+.player-content{
+  padding:6px;
+}
+
+.life-display{
+  text-align:center;
+  font-size:1.6rem;
+  font-weight:bold;
+  margin:4px 0;
+}
+
+.counter-row{
+  display:flex;
+  justify-content:center;
+  gap:4px;
+  margin-bottom:6px;
+  flex-wrap:wrap;
+}
+
+.section-title{
+  text-align:center;
+  font-size:.8rem;
+  color:#ccc;
+  margin:4px 0;
+}
+
+.token-item,
+.commander-item{
+  background:#222;
+  border:1px solid #444;
+  border-radius:8px;
+  padding:4px;
+  margin-bottom:4px;
+}
+
+.token-header{
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:4px;
+}
+
+.add-token-row{
+  display:flex;
+  gap:4px;
+  margin-top:4px;
+}
+
+#settings{
+  display:none;
+  background:#1d1d1d;
+  border-radius:10px;
+  padding:8px;
+  margin-bottom:8px;
+}
+
+#lobbyCode{
+  color:#ff5555;
+  text-align:center;
+  margin-bottom:8px;
+  font-weight:bold;
+}
+</style>
+</head>
+<body>
+
+<div id="lobbyScreen">
+  <h1>MTG LifeTap</h1>
+
+  <input id="roomInput" placeholder="Lobby Code">
+
+  <div style="display:flex; gap:8px;">
+    <button onclick="createLobby()">Create Lobby</button>
+    <button onclick="joinLobby()">Join Lobby</button>
+  </div>
+</div>
+
+<div id="app">
+
+<h1>MTG Multiplayer LifeTap</h1>
+
+<div id="lobbyCode"></div>
+
+<div class="topbar">
+  <button onclick="toggleSettings()">Settings</button>
+  <button onclick="addPlayer()">Add Player</button>
+</div>
+
+<div id="settings">
+  Starting Life:
+  <input type="number" id="startingLife" value="40">
+</div>
+
+<div class="player-grid" id="playerGrid"></div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+
+import {
+  getDatabase,
+  ref,
+  set,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDvo_c8ChZuGG1WqNywBTBCyNMIKdI1pgc",
+  authDomain: "mtg-lifetap.firebaseapp.com",
+  databaseURL: "https://mtg-lifetap-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "mtg-lifetap",
+  storageBucket: "mtg-lifetap.firebasestorage.app",
+  messagingSenderId: "205785826553",
+  appId: "1:205785826553:web:280fa62f96a2fc77b9ce28",
+  measurementId: "G-PG24N1W7ZX"
+};
+
+const appFirebase = initializeApp(firebaseConfig);
+const db = getDatabase(appFirebase);
+
+window.db = db;
+window.ref = ref;
+window.set = set;
+window.onValue = onValue;
+
+let currentLobby = null;
+let playerCount = 0;
+let syncing = false;
+let initializedLobby = false;
+
+const playerGrid = document.getElementById('playerGrid');
+
+window.toggleSettings = function(){
+  const settings = document.getElementById('settings');
+  settings.style.display = settings.style.display === 'block' ? 'none' : 'block';
+}
+
+function generateCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+
+  for(let i=0;i<6;i++){
+    code += chars[Math.floor(Math.random()*chars.length)];
+  }
+
+  return code;
+}
+
+window.createLobby = function(){
+  const code = generateCode();
+  document.getElementById('roomInput').value = code;
+  currentLobby = code;
+  startApp();
+}
+
+window.joinLobby = function(){
+  const code = document.getElementById('roomInput').value.trim().toUpperCase();
+
+  if(!code){
+    alert('Enter lobby code');
+    return;
+  }
+
+  currentLobby = code;
+  startApp();
+}
+
+function startApp(){
+  document.getElementById('lobbyScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  document.getElementById('lobbyCode').textContent = `Lobby: ${currentLobby}`;
+
+  loadState();
+
+  setTimeout(() => {
+    if(!initializedLobby){
+      addPlayer();
+      addPlayer();
+      saveState();
+    }
+  },1000);
+}
+
+window.addPlayer = function(){
+  playerCount++;
+
+  const name = prompt('Player name') || `Player ${playerCount}`;
+
+  const image = prompt('Card image URL') || 'https://cdn-prod.scalefast.com/public/assets/img/resized/wizardsofthecoast-secret-lair/35873b5898194db211811835fc638f67_KR_900_Q90.webp';
+
+  const player = {
+    name,
+    image,
+    life: parseInt(document.getElementById('startingLife').value),
+    commander:{},
+    tokens:[]
+  };
+
+  renderPlayer(player);
+  rebuildCommanderSections();
+  saveState();
+}
+
+function renderPlayer(player){
+  const card = document.createElement('div');
+  card.className = 'player-card';
+
+  if(player.life <= 0){
+    card.classList.add('dead');
+  }
+
+  card.innerHTML = `
+  <img class="player-image" src="${player.image}">
+
+  <div class="player-content">
+
+    <div style="display:flex; gap:4px; margin-bottom:4px;">
+      <input class="player-name" value="${player.name}">
+      <button class="change-image">IMG</button>
+    </div>
+
+    <div class="section-title">Life</div>
+
+    <div class="life-display" data-life>${player.life}</div>
+
+    <div class="counter-row">
+      <button class="life-btn" data-amount="-10">-10</button>
+      <button class="life-btn" data-amount="-1">-1</button>
+      <button class="life-btn" data-amount="1">+1</button>
+      <button class="life-btn" data-amount="10">+10</button>
+    </div>
+
+    <div class="section-title">Commander Damage</div>
+
+    <div class="commander-list"></div>
+
+    <div class="section-title">Tokens</div>
+
+    <div class="token-list" style="display:none"></div>
+
+    <div class="add-token-row">
+      <input class="token-input" placeholder="Token">
+      <button class="add-token">Add</button>
+    </div>
+
+  </div>
+  `;
+
+  playerGrid.appendChild(card);
+
+  attachPlayerEvents(card);
+}
+
+function attachPlayerEvents(card){
+
+  card.querySelector('.change-image').onclick = () => {
+    const url = prompt('New image URL');
+
+    if(url){
+      card.querySelector('.player-image').src = url;
+      saveState();
+    }
+  }
+
+  card.querySelector('.player-name').onchange = () => {
+    rebuildCommanderSections();
+    saveState();
+  }
+
+  card.querySelectorAll('.life-btn').forEach(btn => {
+    btn.onclick = () => {
+      const display = card.querySelector('[data-life]');
+      let value = parseInt(display.textContent);
+
+      value += parseInt(btn.dataset.amount);
+
+      display.textContent = value;
+
+      if(value <= 0){
+        card.classList.add('dead');
+      }else{
+        card.classList.remove('dead');
+      }
+
+      saveState();
+    }
+  });
+
+  card.querySelector('.add-token').onclick = () => {
+    const input = card.querySelector('.token-input');
+    const name = input.value.trim();
+
+    if(!name) return;
+
+    const list = card.querySelector('.token-list');
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+
+    const token = document.createElement('div');
+    token.className = 'token-item';
+
+    token.innerHTML = `
+      <div class="token-header">
+        <strong>${name}</strong>
+        <button class="remove-token">X</button>
+      </div>
+
+      <div class="life-display" style="font-size:1.1rem">0</div>
+
+      <div class="counter-row">
+        <button class="token-btn" data-amount="-1">-1</button>
+        <button class="token-btn" data-amount="1">+1</button>
+      </div>
+    `;
+
+    list.appendChild(token);
+
+    token.querySelector('.remove-token').onclick = () => {
+      token.remove();
+      saveState();
+    }
+
+    token.querySelectorAll('.token-btn').forEach(btn => {
+      btn.onclick = () => {
+        const display = token.querySelector('.life-display');
+        let value = parseInt(display.textContent);
+
+        value += parseInt(btn.dataset.amount);
+
+        if(value < 0) value = 0;
+
+        display.textContent = value;
+        saveState();
+      }
+    });
+
+    input.value = '';
+    saveState();
+  }
+}
+
+function rebuildCommanderSections(){
+  const cards = [...document.querySelectorAll('.player-card')];
+
+  const names = cards.map(c => c.querySelector('.player-name').value || 'Player');
+
+  cards.forEach((card,index) => {
+    const list = card.querySelector('.commander-list');
+
+    const oldValues = {};
+
+    list.querySelectorAll('.commander-item').forEach(item => {
+      oldValues[item.dataset.name] = item.querySelector('.life-display').textContent;
+    });
+
+    list.innerHTML = '';
+
+    names.forEach(name => {
+      if(name === names[index]) return;
+
+      const value = oldValues[name] || 0;
+
+      const item = document.createElement('div');
+      item.className = 'commander-item';
+      item.dataset.name = name;
+
+      item.innerHTML = `
+        <div class="token-header">
+          <strong>${name}</strong>
+        </div>
+
+        <div class="life-display" style="font-size:1.1rem">${value}</div>
+
+        <div class="counter-row">
+          <button class="cmd-btn" data-amount="-10">-10</button>
+          <button class="cmd-btn" data-amount="-1">-1</button>
+          <button class="cmd-btn" data-amount="1">+1</button>
+          <button class="cmd-btn" data-amount="10">+10</button>
+        </div>
+      `;
+
+      list.appendChild(item);
+
+      item.querySelectorAll('.cmd-btn').forEach(btn => {
+        btn.onclick = () => {
+          const display = item.querySelector('.life-display');
+
+          let damage = parseInt(display.textContent);
+
+          damage += parseInt(btn.dataset.amount);
+
+          if(damage < 0) damage = 0;
+
+          display.textContent = damage;
+
+          saveState();
+        }
+      });
+    });
+  });
+}
+
+function getState(){
+  const players = [];
+
+  document.querySelectorAll('.player-card').forEach(card => {
+
+    const commander = {};
+
+    card.querySelectorAll('.commander-item').forEach(item => {
+      commander[item.dataset.name] = item.querySelector('.life-display').textContent;
+    });
+
+    const tokens = [];
+
+    card.querySelectorAll('.token-item').forEach(token => {
+      tokens.push({
+        name: token.querySelector('strong').textContent,
+        value: token.querySelector('.life-display').textContent
+      });
+    });
+
+    players.push({
+      name: card.querySelector('.player-name').value,
+      image: card.querySelector('.player-image').src,
+      life: card.querySelector('[data-life]').textContent,
+      commander,
+      tokens
+    });
+  });
+
+  return {
+    players,
+    startingLife: document.getElementById('startingLife').value
+  };
+}
+
+function saveState(){
+  if(syncing) return;
+  if(!currentLobby) return;
+
+  set(ref(db, `lobbies/${currentLobby}`), getState());
+}
+
+function loadState(){
+  onValue(ref(db, `lobbies/${currentLobby}`), snapshot => {
+
+    const data = snapshot.val();
+
+    if(!data) return;
+
+    initializedLobby = true;
+
+    syncing = true;
+
+    document.getElementById('startingLife').value = data.startingLife || 40;
+
+    playerGrid.innerHTML = '';
+
+    data.players.forEach(player => {
+      renderPlayer(player);
+    });
+
+    rebuildCommanderSections();
+
+    document.querySelectorAll('.player-card').forEach((card,index) => {
+      const player = data.players[index];
+
+      card.querySelectorAll('.commander-item').forEach(item => {
+        const opponent = item.dataset.name;
+
+        if(player.commander && player.commander[opponent]){
+          item.querySelector('.life-display').textContent = player.commander[opponent];
+        }
+      });
+
+      const tokenList = card.querySelector('.token-list');
+
+      if(player.tokens.length){
+        tokenList.style.display = 'flex';
+        tokenList.style.flexDirection = 'column';
+      }
+
+      tokenList.innerHTML = '';
+
+      player.tokens.forEach(tokenData => {
+        const token = document.createElement('div');
+        token.className = 'token-item';
+
+        token.innerHTML = `
+          <div class="token-header">
+            <strong>${tokenData.name}</strong>
+            <button class="remove-token">X</button>
+          </div>
+
+          <div class="life-display" style="font-size:1.1rem">${tokenData.value}</div>
+
+          <div class="counter-row">
+            <button class="token-btn" data-amount="-1">-1</button>
+            <button class="token-btn" data-amount="1">+1</button>
+          </div>
+        `;
+
+        tokenList.appendChild(token);
+
+        token.querySelector('.remove-token').onclick = () => {
+          token.remove();
+          saveState();
+        }
+
+        token.querySelectorAll('.token-btn').forEach(btn => {
+          btn.onclick = () => {
+            const display = token.querySelector('.life-display');
+            let value = parseInt(display.textContent);
+
+            value += parseInt(btn.dataset.amount);
+
+            if(value < 0) value = 0;
+
+            display.textContent = value;
+            saveState();
+          }
+        });
+      });
+    });
+
+    syncing = false;
+
+    console.log('Lobby synced:', currentLobby);
+  });
+}
+
+</script>
+
+</body>
+</html>
