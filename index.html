@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTG Life Tracker</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #111;
+      color: white;
+      padding: 6px;
+      overflow-x: hidden;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 8px;
+      color: #ff3b3b;
+      font-size: 1.2rem;
+    }
+
+    .top-bar {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: #c40000;
+      border: none;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.8rem;
+    }
+
+    input {
+      padding: 4px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #1f1f1f;
+      color: white;
+      font-size: 0.8rem;
+    }
+
+    .settings {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      padding: 8px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      display: none;
+    }
+
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+    }
+
+    .player-card {
+      position: relative;
+      background: #1a1a1a;
+      border: 2px solid #500;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .player-image {
+      width: 100%;
+      aspect-ratio: 63 / 88;
+      object-fit: cover;
+      display: block;
+      border: none;
+    }
+
+    .player-content {
+      padding: 8px;
+    }
+
+    .life-display {
+      font-size: 1.6rem;
+      text-align: center;
+      margin: 4px 0;
+      font-weight: bold;
+    }
+
+    .counter-row {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+
+    .section-title {
+      text-align: center;
+      margin: 4px 0;
+      color: #ddd;
+      font-size: 0.8rem;
+    }
+
+    .token-item {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 4px;
+    }
+
+    .token-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .dead-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
+      font-weight: bold;
+      color: red;
+      z-index: 5;
+    }
+
+    .player-card.dead .dead-overlay {
+      display: flex;
+    }
+
+    .add-token-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>MTG Multiplayer Life Tracker</h1>
+
+<div class="top-bar">
+  <button onclick="toggleSettings()">Settings</button>
+  <button onclick="addPlayer()">Add Player</button>
+</div>
+
+<div class="settings" id="settingsMenu">
+  <label>Starting Life:</label>
+  <input type="number" id="startingLife" value="40" min="1" />
+</div>
+
+<div class="player-grid" id="playerGrid"></div>
+
+<script>
+let startingLife = 40;
+let playerCount = 0;
+
+document.getElementById('startingLife').addEventListener('change', (e) => {
+  startingLife = parseInt(e.target.value) || 40;
+});
+
+function toggleSettings() {
+  const menu = document.getElementById('settingsMenu');
+  menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
+function refreshCommanderDamageSections() {
+  const cards = document.querySelectorAll('.player-card');
+
+  const players = [...cards].map(card => {
+    return card.querySelector('.player-name-input').value || 'Unnamed Player';
+  });
+
+  cards.forEach((card, index) => {
+    const currentPlayer = players[index];
+    const list = card.querySelector('.commander-damage-list');
+
+    const existingValues = {};
+
+    list.querySelectorAll('[data-opponent]').forEach(entry => {
+      existingValues[entry.dataset.opponent] =
+        entry.querySelector('.life-display').textContent;
+    });
+
+    list.innerHTML = '';
+
+    players.forEach(opponent => {
+      if (opponent === currentPlayer) return;
+
+      const damage = existingValues[opponent] || 0;
+
+      const item = document.createElement('div');
+      item.className = 'token-item';
+      item.dataset.opponent = opponent;
+
+      item.innerHTML = `
+        <div class="token-header">
+          <strong>${opponent}</strong>
+        </div>
+
+        <div class="life-display" style="font-size:1.2rem">${damage}</div>
+
+        <div class="counter-row">
+          <button onclick="changeCommander(this, -10)">-10</button>
+          <button onclick="changeCommander(this, -1)">-1</button>
+          <button onclick="changeCommander(this, 1)">+1</button>
+          <button onclick="changeCommander(this, 10)">+10</button>
+        </div>
+      `;
+
+      list.appendChild(item);
+    });
+  });
+}
+
+function addPlayer() {
+  playerCount++;
+
+  const name = prompt('Player name?') || `Player ${playerCount}`;
+
+  const image = prompt('Card image URL?') ||
+    'https://cdn-prod.scalefast.com/public/assets/img/resized/wizardsofthecoast-secret-lair/35873b5898194db211811835fc638f67_KR_900_Q90.webp';
+
+  const card = document.createElement('div');
+  card.className = 'player-card';
+
+  card.innerHTML = `
+    <div class="dead-overlay">DEAD</div>
+
+    <img class="player-image" src="${image}" alt="card image">
+
+    <div class="player-content">
+
+      <div style="display:flex; gap:4px; margin-bottom:4px; flex-wrap:wrap;">
+        <input class="player-name-input"
+               value="${name}"
+               onchange="updatePlayerName(this)">
+
+        <button onclick="changePlayerImage(this)">Image</button>
+      </div>
+
+      <div class="section-title">Life</div>
+
+      <div class="life-display" data-life>${startingLife}</div>
+
+      <div class="counter-row">
+        <button onclick="changeLife(this, -10)">-10</button>
+        <button onclick="changeLife(this, -1)">-1</button>
+        <button onclick="changeLife(this, 1)">+1</button>
+        <button onclick="changeLife(this, 10)">+10</button>
+      </div>
+
+      <div class="section-title">Commander Damage</div>
+
+      <div class="commander-damage-list"></div>
+
+      <div class="section-title">Custom Tokens</div>
+
+      <div class="token-list" style="display:none"></div>
+
+      <div class="add-token-row">
+        <input type="text"
+               placeholder="Token name"
+               class="token-name-input">
+
+        <button onclick="addToken(this)">Add</button>
+      </div>
+
+    </div>
+  `;
+
+  document.getElementById('playerGrid').appendChild(card);
+
+  refreshCommanderDamageSections();
+}
+
+function changeLife(button, amount) {
+  const card = button.closest('.player-card');
+  const display = card.querySelector('[data-life]');
+
+  let life = parseInt(display.textContent);
+  life += amount;
+
+  display.textContent = life;
+
+  if (life <= 0) {
+    card.classList.add('dead');
+  } else {
+    card.classList.remove('dead');
+  }
+}
+
+function changeCommander(button, amount) {
+  const item = button.closest('.token-item');
+  const display = item.querySelector('.life-display');
+
+  let damage = parseInt(display.textContent);
+  damage = Math.max(0, damage + amount);
+
+  display.textContent = damage;
+}
+
+function updatePlayerName(input) {
+  if (!input.value.trim()) {
+    input.value = 'Unnamed Player';
+  }
+
+  refreshCommanderDamageSections();
+}
+
+function changePlayerImage(button) {
+  const card = button.closest('.player-card');
+  const image = card.querySelector('.player-image');
+
+  const newUrl = prompt('Enter new image URL:');
+
+  if (newUrl && newUrl.trim() !== '') {
+    image.src = newUrl;
+  }
+}
+
+function addToken(button) {
+  const card = button.closest('.player-card');
+  const input = card.querySelector('.token-name-input');
+
+  const tokenName = input.value.trim();
+
+  if (!tokenName) return;
+
+  const tokenList = card.querySelector('.token-list');
+
+  tokenList.style.display = 'flex';
+  tokenList.style.flexDirection = 'column';
+
+  const token = document.createElement('div');
+  token.className = 'token-item';
+
+  token.innerHTML = `
+    <div class="token-header">
+      <strong>${tokenName}</strong>
+      <button onclick="this.parentElement.parentElement.remove()">X</button>
+    </div>
+
+    <div class="life-display" style="font-size:1.2rem">0</div>
+
+    <div class="counter-row">
+      <button onclick="changeToken(this, -1)">-1</button>
+      <button onclick="changeToken(this, 1)">+1</button>
+    </div>
+  `;
+
+  tokenList.appendChild(token);
+
+  input.value = '';
+}
+
+function changeToken(button, amount) {
+  const token = button.closest('.token-item');
+  const display = token.querySelector('.life-display');
+
+  let value = parseInt(display.textContent);
+  value = Math.max(0, value + amount);
+
+  display.textContent = value;
+}
+
+addPlayer();
+addPlayer();
+</script>
+
+</body>
+</html>
