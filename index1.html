@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTG Life Tracker</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #111;
+      color: white;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #ff3b3b;
+    }
+
+    .top-bar {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: #c40000;
+      border: none;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: 0.2s;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #ff2e2e;
+    }
+
+    input {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #1f1f1f;
+      color: white;
+    }
+
+    .settings {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      padding: 15px;
+      border-radius: 15px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .player-card {
+      position: relative;
+      background: #1a1a1a;
+      border: 2px solid #500;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(255, 0, 0, 0.15);
+    }
+
+    .player-image {
+      width: 100%;
+      aspect-ratio: 63 / 88;
+      max-height: 520px;
+      object-fit: contain;
+      border-bottom: 2px solid #500;
+      background: #000;
+      padding: 10px;
+    }
+
+    .player-content {
+      padding: 15px;
+    }
+
+    .life-display {
+      font-size: 3rem;
+      text-align: center;
+      margin: 10px 0;
+      font-weight: bold;
+    }
+
+    .counter-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .section-title {
+      text-align: center;
+      margin: 10px 0;
+      color: #ddd;
+      font-size: 0.95rem;
+    }
+
+    .token-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .token-item {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .token-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .dead-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      font-size: 4rem;
+      font-weight: bold;
+      color: red;
+      z-index: 5;
+    }
+
+    .player-card.dead .dead-overlay {
+      display: flex;
+    }
+
+    .add-token-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>MTG Multiplayer Life Tracker</h1>
+
+<div class="top-bar">
+  <button onclick="toggleSettings()">Settings</button>
+  <button onclick="addPlayer()">Add Player</button>
+</div>
+
+<div class="settings" id="settingsMenu">
+  <label>Starting Life:</label>
+  <input type="number" id="startingLife" value="40" min="1" />
+</div>
+
+<div class="player-grid" id="playerGrid"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDvo_c8ChZuGG1WqNywBTBCyNMIKdI1pgc",
+    authDomain: "mtg-lifetap.firebaseapp.com",
+    databaseURL: "https://mtg-lifetap-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "mtg-lifetap",
+    storageBucket: "mtg-lifetap.firebasestorage.app",
+    messagingSenderId: "205785826553",
+    appId: "1:205785826553:web:280fa62f96a2fc77b9ce28",
+    measurementId: "G-PG24N1W7ZX"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+
+  let startingLife = 40;
+  let playerCount = 0;
+
+  document.getElementById('startingLife').addEventListener('change', (e) => {
+    startingLife = parseInt(e.target.value) || 40;
+  });
+
+  window.toggleSettings = function () {
+    const menu = document.getElementById('settingsMenu');
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+  }
+
+  window.addPlayer = function () {
+    playerCount++;
+
+    const name = prompt('Player name?') || `Player ${playerCount}`;
+
+    const card = document.createElement('div');
+    card.className = 'player-card';
+
+    card.innerHTML = `
+      <div class="dead-overlay">DEAD</div>
+
+      <div class="player-content">
+        <input class="player-name-input" value="${name}">
+
+        <div class="section-title">Life Total</div>
+
+        <div class="life-display" data-life>${startingLife}</div>
+
+        <div class="counter-row">
+          <button onclick="changeLife(this, -10)">-10</button>
+          <button onclick="changeLife(this, -1)">-1</button>
+          <button onclick="changeLife(this, 1)">+1</button>
+          <button onclick="changeLife(this, 10)">+10</button>
+        </div>
+
+        <div class="section-title">Custom Tokens</div>
+
+        <div class="token-list" style="display:none"></div>
+
+        <div class="add-token-row">
+          <input type="text" placeholder="Token name" class="token-name-input">
+          <button onclick="addToken(this)">Add</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('playerGrid').appendChild(card);
+  }
+
+  window.changeLife = function(button, amount) {
+    const card = button.closest('.player-card');
+    const display = card.querySelector('[data-life]');
+
+    let value = parseInt(display.textContent);
+    value += amount;
+
+    display.textContent = value;
+
+    if (value <= 0) {
+      card.classList.add('dead');
+    } else {
+      card.classList.remove('dead');
+    }
+  }
+
+  window.addToken = function(button) {
+    const card = button.closest('.player-card');
+    const input = card.querySelector('.token-name-input');
+
+    const name = input.value.trim();
+
+    if (!name) return;
+
+    const tokenList = card.querySelector('.token-list');
+    tokenList.style.display = 'flex';
+
+    const token = document.createElement('div');
+    token.className = 'token-item';
+
+    token.innerHTML = `
+      <div class="token-header">
+        <strong>${name}</strong>
+        <button onclick="this.parentElement.parentElement.remove()">X</button>
+      </div>
+
+      <div class="life-display" style="font-size:2rem">0</div>
+
+      <div class="counter-row">
+        <button onclick="changeToken(this, -1)">-1</button>
+        <button onclick="changeToken(this, 1)">+1</button>
+      </div>
+    `;
+
+    tokenList.appendChild(token);
+    input.value = '';
+  }
+
+  window.changeToken = function(button, amount) {
+    const token = button.closest('.token-item');
+    const display = token.querySelector('.life-display');
+
+    let value = parseInt(display.textContent);
+    value = Math.max(0, value + amount);
+
+    display.textContent = value;
+  }
+
+  addPlayer();
+  addPlayer();
+</script>
+
+</body>
+</html>
